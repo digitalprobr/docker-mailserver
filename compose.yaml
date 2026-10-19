@@ -1,10 +1,23 @@
 services:
   mailserver:
-    image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    # Builds this repository's `Dockerfile` (Coolify: Build Pack `Docker Compose`).
+    # To pull a published image instead of building, remove `build` and set:
+    # image: ghcr.io/docker-mailserver/docker-mailserver:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DMS_RELEASE: ${DMS_RELEASE:-edge}
     container_name: mailserver
-    # Provide the FQDN of your mail server here (Your DNS MX record should point to this value)
-    hostname: mail.example.com
+    # Provide the FQDN of your mail server here (Your DNS MX record should point to this value).
+    # On Coolify, set `MAIL_HOSTNAME` in the app's environment instead of editing this file.
+    hostname: ${MAIL_HOSTNAME:-mail.example.com}
     env_file: mailserver.env
+    # `environment` takes precedence over `env_file`, so these toggles can be driven from
+    # the Coolify environment panel without editing `mailserver.env`.
+    environment:
+      - ENABLE_FAIL2BAN=${ENABLE_FAIL2BAN:-0}
+      - SSL_TYPE=${SSL_TYPE:-}
     # More information about the mail-server ports:
     # https://docker-mailserver.github.io/docker-mailserver/latest/config/security/understanding-the-ports/
     ports:
@@ -13,18 +26,54 @@ services:
       - "465:465"  # ESMTP (implicit TLS)
       - "587:587"  # ESMTP (explicit TLS => STARTTLS)
       - "993:993"  # IMAP4 (implicit TLS)
+      # - "110:110"  # POP3 (explicit TLS => STARTTLS)
+      # - "995:995"  # POP3 (implicit TLS)
+      # - "4190:4190" # ManageSieve (explicit TLS => STARTTLS)
+    # Named volumes (not bind mounts) keep mail data and config outside of the deployment
+    # directory, so they survive Coolify redeployments. The `name` keys pin the volume
+    # names, so the data is not lost if the compose project name changes.
+    # Local alternative (do NOT use on Coolify, the artifact directory is re-cloned):
+    #   - ./docker-data/dms/mail-data/:/var/mail/
+    #   - ./docker-data/dms/mail-state/:/var/mail-state/
+    #   - ./docker-data/dms/mail-logs/:/var/log/mail/
+    #   - ./docker-data/dms/config/:/tmp/docker-mailserver/
+    # Backup example:
+    # docker run --rm -v dms-mail-data:/data:ro -v "${PWD}":/backup alpine tar czf /backup/dms-mail-data.tgz -C /data .
     volumes:
-      - ./docker-data/dms/mail-data/:/var/mail/
-      - ./docker-data/dms/mail-state/:/var/mail-state/
-      - ./docker-data/dms/mail-logs/:/var/log/mail/
-      - ./docker-data/dms/config/:/tmp/docker-mailserver/
+      - dms-mail-data:/var/mail/
+      - dms-mail-state:/var/mail-state/
+      - dms-mail-logs:/var/log/mail/
+      - dms-config:/tmp/docker-mailserver/
       - /etc/localtime:/etc/localtime:ro
-    restart: always
+    # Required by Fail2Ban (`ENABLE_FAIL2BAN=1`) to manage the kernel packet filter.
+    # Remove this capability when Fail2Ban stays disabled (least privilege).
+    cap_add:
+      - NET_ADMIN
+    # NOTE: The image already configures a `HEALTHCHECK` (`dms-healthcheck`). It is
+    # redeclared here explicitly so the container is not flagged unhealthy while
+    # ClamAV/Rspamd/Amavis are still starting.
+    healthcheck:
+      test: ["CMD", "dms-healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
     stop_grace_period: 1m
-    # Uncomment if using `ENABLE_FAIL2BAN=1`:
-    # cap_add:
-    #   - NET_ADMIN
-    # NOTE: The container image configures a `HEALTHCHECK` internally.
-    # Docker Compose should default to using `dms-healthcheck`.
-    # healthcheck:
-    #   test: "ss --listening --ipv4 --tcp | grep --silent ':smtp' || exit 1"
+    # Bounds the container's json-file log (the mail logs themselves live in the
+    # `dms-mail-logs` volume), so a chatty container cannot fill the host disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  dms-mail-data:
+    name: dms-mail-data
+  dms-mail-state:
+    name: dms-mail-state
+  dms-mail-logs:
+    name: dms-mail-logs
+  dms-config:
+    name: dms-config
