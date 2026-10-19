@@ -19,11 +19,14 @@ SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 # --- Install Basic Software --------------------
 # -----------------------------------------------
 
-COPY --chmod=+x target/bin/sedfile /usr/local/bin/sedfile
+# NOTE: `COPY --chmod=+x` is not honoured by every builder (the integrated Docker
+# builder used by Coolify leaves the script non-executable, aborting the build with
+# `/usr/local/bin/sedfile: Permission denied`). Set the mode in a `RUN` instead.
+COPY target/bin/sedfile /usr/local/bin/sedfile
 COPY target/scripts/build/packages.sh /build/
 COPY target/scripts/helpers/log.sh /usr/local/bin/helpers/log.sh
 
-RUN /bin/bash /build/packages.sh && rm -r /build
+RUN chmod 0755 /usr/local/bin/sedfile && /bin/bash /build/packages.sh && rm -r /build
 
 #
 # main stage provides all packages, config, and adds scripts
