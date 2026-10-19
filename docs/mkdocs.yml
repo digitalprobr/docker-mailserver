@@ -185,6 +185,7 @@ nav:
       - 'Mailserver behind Proxy': examples/tutorials/mailserver-behind-proxy.md
       - 'Crowdsec': examples/tutorials/crowdsec.md
       - 'Building your own Docker image': examples/tutorials/docker-build.md
+      - 'Deploy with Coolify': examples/tutorials/coolify.md
       - 'Blog Posts': examples/tutorials/blog-posts.md
     - 'Use Cases':
       - 'Forward-Only Mail-Server with LDAP': examples/use-cases/forward-only-mailserver-with-ldap-authentication.md
